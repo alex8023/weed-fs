@@ -13,15 +13,17 @@ type VolumeLayout struct {
 	writables       []storage.VolumeId // transient array of writable volume id
 	pulse           int64
 	volumeSizeLimit uint64
+	PickPreferOld   bool // PickForWrite should prefer older (smaller id) volumes
 }
 
-func NewVolumeLayout(repType storage.ReplicationType, volumeSizeLimit uint64, pulse int64) *VolumeLayout {
+func NewVolumeLayout(repType storage.ReplicationType, volumeSizeLimit uint64, pulse int64, preferOld bool) *VolumeLayout {
 	return &VolumeLayout{
 		repType:         repType,
 		vid2location:    make(map[storage.VolumeId]*VolumeLocationList),
 		writables:       *new([]storage.VolumeId),
 		pulse:           pulse,
 		volumeSizeLimit: volumeSizeLimit,
+		PickPreferOld:   preferOld,
 	}
 }
 
@@ -57,7 +59,19 @@ func (vl *VolumeLayout) PickForWrite(count int) (*storage.VolumeId, int, *Volume
 		fmt.Println("No more writable volumes!")
 		return nil, 0, nil, errors.New("No more writable volumes!")
 	}
-	vid := vl.writables[rand.Intn(len_writers)]
+	var vid storage.VolumeId
+	if len_writers == 1 {
+		vid = vl.writables[0]
+	} else if vl.PickPreferOld && rand.Float32() > 1/float32(len_writers) {
+		vid = vl.writables[0]
+		for _, v := range vl.writables {
+			if v < vid {
+				vid = v
+			}
+		}
+	} else {
+		vid = vl.writables[rand.Intn(len_writers)]
+	}
 	locationList := vl.vid2location[vid]
 	if locationList != nil {
 		return &vid, count, locationList, nil
