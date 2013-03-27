@@ -1,0 +1,24 @@
+# Memory usage
+One volume can contain 2^32 files in theory. But a needle header is 16 bytes,
+size is 4 bytes, padding 8 bytes (can be 1) - so the storage overhead is at 
+least 21 bytes.
+So 2^32 / (21 + 1) = 195225786 files (1 byte each) can be stored in one 32Gb 
+volume.
+
+In memory the overhead is at least 16 bytes, so 195225786 * 16 = 2978Mb
+
+# Disk-based volume index
+One solution could be to store _full_ (non-changing) volumes' needle map on 
+disk and search there.
+
+## CDB
+http://cr.yp.to/cdb.html could be a solution, but has some limitations: the
+whole .cdb file has to be at most 2^32 bytes. Each record has 24 bytes 
+overhead + 2048 bytes for hash tables + the keys.
+That is (2^32 - 2048) / (24 + 16) = 107374131 records.
+
+That means the maximum number of files (195225786) needs 2 cdb files.
+
+But if the files are more than 8 bytes, that shrinks to 1 cdb file!
+
+
