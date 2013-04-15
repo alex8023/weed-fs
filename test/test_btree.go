@@ -12,7 +12,8 @@ import (
 var magic = [16]byte{'p', 'u', 'f', ',', ' ', 't', 'h', 'e', ' ', 'm', 'a', 'g', 'i', 'c', ' '}
 
 const capacity = 1024
-const count = 195225786
+const FullCount = 195225786
+const count = 10000000
 
 type key struct {
 	Id  uint64
@@ -68,10 +69,13 @@ func main() {
 		}
 		k := key{Id: uint64(rand.Int()), Off: 0}
 		for i := 0; i < count; i++ {
-			k.Id += uint64(rand.Int())
+			k.Id += uint64(1 + rand.Intn(1))
 			k.Off = uint32(i)
 			if _, err = tree.Insert(&k); err != nil {
 				log.Fatalf("error inserting %s: %s", k, err)
+			}
+			if i%1000000 == 0 {
+				log.Printf("%d", i)
 			}
 		}
 

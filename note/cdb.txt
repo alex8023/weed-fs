@@ -21,7 +21,15 @@ That means the maximum number of files (195225786) needs 2 cdb files.
 
 But if the files are more than 8 bytes, that shrinks to 1 cdb file!
 
+Cdb fills 10^7 records (8 byte key, 4 byte value) is written to a file residing
+on tmpfs in 19s, resulting 344Mb.
+
 
 ## B-tree
 I've found https://bitbucket.org/santucco/btree, an on-disk B-tree 
 implementation.
+
+This seems to be slow: one million (8 byte key, 4 byte value) is written to a
+file residing tmpfs is 50s. 
+Filling 10^7 records is 322s, resulting 306Mb.
+
