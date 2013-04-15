@@ -22,3 +22,6 @@ That means the maximum number of files (195225786) needs 2 cdb files.
 But if the files are more than 8 bytes, that shrinks to 1 cdb file!
 
 
+## B-tree
+I've found https://bitbucket.org/santucco/btree, an on-disk B-tree 
+implementation.
