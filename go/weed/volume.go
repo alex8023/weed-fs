@@ -2,7 +2,7 @@ package main
 
 import (
 	"code.google.com/p/weed-fs/go/operation"
-  "code.google.com/p/weed-fs/go/replication"
+	"code.google.com/p/weed-fs/go/replication"
 	"code.google.com/p/weed-fs/go/storage"
 	"log"
 	"math/rand"
