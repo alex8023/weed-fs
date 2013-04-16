@@ -23,7 +23,8 @@ func TestCdbMap0Convert(t *testing.T) {
 	}
 }
 
-func TestCdbMap1List(t *testing.T) {
+func BenchmarkCdbMap1List(t *testing.B) {
+    t.StopTimer()
 	indexFile, err := os.Open(testIndexFilename)
 	if err != nil {
 		t.Fatalf("cannot open %s: %s", testIndexFilename, err)
@@ -46,8 +47,9 @@ func TestCdbMap1List(t *testing.T) {
 
 	i := 0
 	log.Printf("checking whether the cdb contains every key")
+    t.StartTimer()
 	err = idx.Visit(func(nv NeedleValue) error {
-		if i > 1000 || rand.Intn(10) < 9 {
+		if i > t.N || rand.Intn(10) < 9 {
 			return nil
 		}
 		i++
@@ -63,16 +65,19 @@ func TestCdbMap1List(t *testing.T) {
 		} else if nv2.Size != nv.Size {
 			t.Errorf("size is %d in index, %d in cdb", nv.Size, nv2.Size)
 		}
+        t.SetBytes(int64(nv.Size))
 		return nil
 	})
+    t.StopTimer()
 	if err != nil {
 		t.Errorf("error visiting index: %s", err)
 	}
 
 	i = 0
 	log.Printf("checking wheter the cdb contains no stray keys")
+    t.StartTimer()
 	err = m.Visit(func(nv NeedleValue) error {
-		if i > 1000 || rand.Intn(10) < 9 {
+		if i > t.N || rand.Intn(10) < 9 {
 			return nil
 		}
 		if nv2, ok := m.Get(uint64(nv.Key)); !ok || nv2 == nil {
@@ -88,8 +93,10 @@ func TestCdbMap1List(t *testing.T) {
 		if i%1000 == 0 {
 			log.Printf("%d. %s", i, nv)
 		}
+        t.SetBytes(int64(nv.Size))
 		return nil
 	})
+    t.StopTimer()
 	if err != nil {
 		t.Errorf("error visiting index: %s", err)
 	}

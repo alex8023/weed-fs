@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/tgulacsi/go-cdb"
-	"io"
 	"os"
 	"path/filepath"
 )
@@ -145,7 +144,7 @@ func (m cdbMap) Visit(visit func(NeedleValue) error) (err error) {
 }
 
 // converts an .idx index to a cdb
-func ConvertIndexToCdb(cdbName string, index io.Reader) error {
+func ConvertIndexToCdb(cdbName string, index *os.File) error {
 	tempnam := cdbName + "t"
 	fnames := make([]string, 1, 2)
 	adder, closer, err := openTempCdb(tempnam)
@@ -157,10 +156,7 @@ func ConvertIndexToCdb(cdbName string, index io.Reader) error {
 	mm := mapMetric{}
 	elt := cdb.Element{Key: make([]byte, 8), Data: make([]byte, 8)}
 
-	err = walkIndexFile(index, func(key uint64, offset, size uint32) error {
-		if offset <= 0 { //don't count deleted files
-			return nil
-		}
+	walk := func(key uint64, offset, size uint32) error {
 		if mm.FileCounter >= maxCdbRecCount {
 			data, e := json.Marshal(mm)
 			if e != nil {
@@ -185,7 +181,26 @@ func ConvertIndexToCdb(cdbName string, index io.Reader) error {
 		util.Uint32toBytes(elt.Data[4:], size)
 		mm.FileCounter++
 		return adder(elt)
-	})
+	}
+	// since deletions are possible, this is not working in every case
+	if false {
+		err = walkIndexFile(index, func(key uint64, offset, size uint32) error {
+			if offset <= 0 { //don't count deleted files
+				return nil
+			}
+			return walk(key, offset, size)
+		})
+	} else { // thus we load the whole file into memory
+		idx, err := LoadNeedleMap(index)
+		if err != nil {
+			return fmt.Errorf("error loading needle map %s: %s", index, err)
+		}
+		defer idx.Close()
+        // and write out the cdb from there
+		err = idx.Visit(func(nv NeedleValue) error {
+			return walk(uint64(nv.Key), nv.Offset, nv.Size)
+		})
+	}
 	if err != nil {
 		closer()
 		return fmt.Errorf("error walking index %s: %s", index, err)
