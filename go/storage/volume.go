@@ -75,20 +75,17 @@ func (v *Volume) load(alsoLoadIndex bool) error {
 			if indexFile, e = os.Open(fileName + ".idx"); e != nil && !os.IsNotExist(e) {
 				return fmt.Errorf("cannot open index file %s.idx: %s", fileName, e)
 			}
-            //TODO: implement ConvertIndexToCdb, OpenCdbMap
-			//if indexFile != nil {
-			//	if e = ConvertIndexToCdb(fileName+".cdb", indexFile); e != nil {
-			//		log.Printf("error converting %s.idx to %s.cdb: %s", fileName, fileName)
-			//	} else {
-			//		indexFile.Close()
-			//		os.Remove(indexFile.Name())
-			//		indexFile = nil
-			//	}
-			//}
-			//v.nm, e = OpenCdbMap(fileName + ".cdb")
-            if e != nil {
-			    return e
-            }
+			if indexFile != nil {
+				if e = ConvertIndexToCdb(fileName+".cdb", indexFile); e != nil {
+					log.Printf("error converting %s.idx to %s.cdb: %s", fileName, fileName)
+				} else {
+					indexFile.Close()
+					os.Remove(indexFile.Name())
+					indexFile = nil
+				}
+			}
+			v.nm, e = OpenCdbMap(fileName + ".cdb")
+			return e
 		} else {
 			indexFile, e = os.OpenFile(fileName+".idx", os.O_RDWR|os.O_CREATE, 0644)
 			if e != nil {
