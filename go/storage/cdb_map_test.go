@@ -1,9 +1,9 @@
 package storage
 
 import (
+	"log"
+	"math/rand"
 	"os"
-    "math/rand"
-    "log"
 	"testing"
 )
 
@@ -29,7 +29,7 @@ func TestCdbMap1List(t *testing.T) {
 		t.Fatalf("cannot open %s: %s", testIndexFilename, err)
 	}
 	defer indexFile.Close()
-    t.Logf("opening %s", indexFile)
+	t.Logf("opening %s", indexFile)
 	idx, err := LoadNeedleMap(indexFile)
 	if err != nil {
 		t.Fatalf("cannot load %s: %s", indexFile, err)
@@ -44,16 +44,16 @@ func TestCdbMap1List(t *testing.T) {
 	}
 	defer m.Close()
 
-    i := 0
+	i := 0
 	log.Printf("checking whether the cdb contains every key")
 	err = idx.Visit(func(nv NeedleValue) error {
-        if i > 1000 || rand.Intn(10) < 9 {
-            return nil
-        }
-        i++
-        if i % 1000 == 0 {
-            log.Printf("%d. %s", i, nv)
-        }
+		if i > 1000 || rand.Intn(10) < 9 {
+			return nil
+		}
+		i++
+		if i%1000 == 0 {
+			log.Printf("%d. %s", i, nv)
+		}
 		if nv2, ok := m.Get(uint64(nv.Key)); !ok || nv2 == nil {
 			t.Errorf("%s in index, not in cdb", nv.Key)
 		} else if nv2.Key != nv.Key {
@@ -69,12 +69,12 @@ func TestCdbMap1List(t *testing.T) {
 		t.Errorf("error visiting index: %s", err)
 	}
 
-    i = 0
+	i = 0
 	log.Printf("checking wheter the cdb contains no stray keys")
 	err = m.Visit(func(nv NeedleValue) error {
-        if i > 1000 || rand.Intn(10) < 9 {
-            return nil
-        }
+		if i > 1000 || rand.Intn(10) < 9 {
+			return nil
+		}
 		if nv2, ok := m.Get(uint64(nv.Key)); !ok || nv2 == nil {
 			t.Errorf("%s in cdb, not in index", nv.Key)
 		} else if nv2.Key != nv.Key {
@@ -84,10 +84,10 @@ func TestCdbMap1List(t *testing.T) {
 		} else if nv2.Size != nv.Size {
 			t.Errorf("size is %d in cdb, %d in index", nv.Size, nv2.Size)
 		}
-        i++
-        if i % 1000 == 0 {
-            log.Printf("%d. %s", i, nv)
-        }
+		i++
+		if i%1000 == 0 {
+			log.Printf("%d. %s", i, nv)
+		}
 		return nil
 	})
 	if err != nil {
