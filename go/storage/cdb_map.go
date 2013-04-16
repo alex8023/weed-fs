@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 )
 
-// CDB-backed read-only needle map
 type cdbMap struct {
 	c1, c2   *cdb.Cdb
 	fn1, fn2 string
