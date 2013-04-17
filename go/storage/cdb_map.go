@@ -21,7 +21,8 @@ const maxCdbRecCount = 100000000
 
 var errReadOnly = errors.New("cannot modify a read-only map")
 
-// opens the cdb file(s) (base.cdb or base.1.cdb and base.2.cdb)
+// opens the cdb file(s) (base.cdb OR base.1.cdb AND base.2.cdb)
+// in case of two files, the metric (at key 'M') must be in base.2.cdb
 func OpenCdbMap(fileName string) (m *cdbMap, err error) {
 	m = new(cdbMap)
 	if m.c1, err = cdb.Open(fileName); err == nil {
@@ -35,24 +36,11 @@ func OpenCdbMap(fileName string) (m *cdbMap, err error) {
 		if m.c1, err = cdb.Open(m.fn1); err != nil {
 			return nil, err
 		}
-		if err = getMetric(m.c1, &m.mapMetric); err != nil {
+		m.fn2 = bn + ".2" + ext
+		if m.c2, err = cdb.Open(m.fn2); err != nil {
 			return nil, err
 		}
-		m.fn2 = bn + ".2" + ext
-		if m.c2, err = cdb.Open(m.fn2); err != nil && os.IsNotExist(err) {
-			err = nil
-		}
-		if err != nil || m.c2 == nil {
-			return
-		}
-		var mm mapMetric
-		if err = getMetric(m.c2, &mm); err != nil {
-			return
-		}
-		m.DeletionCounter += mm.DeletionCounter
-		m.FileCounter += mm.FileCounter
-		m.DeletionByteCounter += mm.DeletionByteCounter
-		m.FileByteCounter += mm.FileByteCounter
+		err = getMetric(m.c2, &m.mapMetric)
 		return
 	}
 	return nil, err
@@ -153,18 +141,11 @@ func ConvertIndexToCdb(cdbName string, index *os.File) error {
 	}
 	fnames[0] = tempnam
 
-	mm := mapMetric{}
 	elt := cdb.Element{Key: make([]byte, 8), Data: make([]byte, 8)}
 
+	fcount := uint64(0)
 	walk := func(key uint64, offset, size uint32) error {
-		if mm.FileCounter >= maxCdbRecCount {
-			data, e := json.Marshal(mm)
-			if e != nil {
-				return fmt.Errorf("error marshaling metric %s: %s", mm, e)
-			}
-			if err = adder(cdb.Element{Key: []byte{'M'}, Data: data}); err != nil {
-				return err
-			}
+		if fcount >= maxCdbRecCount {
 			if err = closer(); err != nil {
 				return err
 			}
@@ -173,42 +154,31 @@ func ConvertIndexToCdb(cdbName string, index *os.File) error {
 				return fmt.Errorf("error creating second factory: %s", err)
 			}
 			fnames = append(fnames, tempnam)
-			mm = mapMetric{}
+			fcount = 0
 		}
-		mm.FileByteCounter += uint64(size)
 		util.Uint64toBytes(elt.Key, key)
 		util.Uint32toBytes(elt.Data[:4], offset)
 		util.Uint32toBytes(elt.Data[4:], size)
-		mm.FileCounter++
+		fcount++
 		return adder(elt)
 	}
-	// since deletions are possible, this is not working in every case
-	if false {
-		err = walkIndexFile(index, func(key uint64, offset, size uint32) error {
-			if offset <= 0 { //don't count deleted files
-				return nil
-			}
-			return walk(key, offset, size)
-		})
-	} else { // thus we load the whole file into memory
-		idx, err := LoadNeedleMap(index)
-		if err != nil {
-			return fmt.Errorf("error loading needle map %s: %s", index, err)
-		}
-		defer idx.Close()
-		// and write out the cdb from there
-		err = idx.Visit(func(nv NeedleValue) error {
-			return walk(uint64(nv.Key), nv.Offset, nv.Size)
-		})
+	idx, err := LoadNeedleMap(index)
+	if err != nil {
+		return fmt.Errorf("error loading needle map %s: %s", index, err)
 	}
+	defer idx.Close()
+	// and write out the cdb from there
+	err = idx.Visit(func(nv NeedleValue) error {
+		return walk(uint64(nv.Key), nv.Offset, nv.Size)
+	})
 	if err != nil {
 		closer()
 		return fmt.Errorf("error walking index %s: %s", index, err)
 	}
 	// store fileBytes
-	data, e := json.Marshal(mm)
+	data, e := json.Marshal(idx.mapMetric)
 	if e != nil {
-		return fmt.Errorf("error marshaling metric %s: %s", mm, e)
+		return fmt.Errorf("error marshaling metric %s: %s", idx.mapMetric, e)
 	}
 	if err = adder(cdb.Element{Key: []byte{'M'}, Data: data}); err != nil {
 		return err

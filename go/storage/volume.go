@@ -76,6 +76,7 @@ func (v *Volume) load(alsoLoadIndex bool) error {
 				return fmt.Errorf("cannot open index file %s.idx: %s", fileName, e)
 			}
 			if indexFile != nil {
+				log.Printf("converting %s.idx to %s.cdb", fileName, fileName)
 				if e = ConvertIndexToCdb(fileName+".cdb", indexFile); e != nil {
 					log.Printf("error converting %s.idx to %s.cdb: %s", fileName, fileName)
 				} else {
@@ -240,6 +241,37 @@ func (v *Volume) commitCompact() error {
 	if e = v.load(true); e != nil {
 		return e
 	}
+	return nil
+}
+func (v *Volume) freeze() error {
+	if v.readOnly {
+		return nil
+	}
+	nm, ok := v.nm.(*NeedleMap)
+	if !ok {
+		return nil
+	}
+	v.accessLock.Lock()
+	defer v.accessLock.Unlock()
+	indexFilename := nm.indexFile.Name()
+	idx, err := os.Open(indexFilename)
+	if err != nil {
+		return err
+	}
+	bn, _ := nakeFilename(v.dataFile.Name())
+	cdbFn := bn + ".cdb"
+	log.Printf("converting %s to %s", idx.Name(), cdbFn)
+	if err = ConvertIndexToCdb(cdbFn, idx); err != nil {
+		idx.Close()
+		return err
+	}
+	idx.Close()
+	if v.nm, err = OpenCdbMap(cdbFn); err != nil {
+		return err
+	}
+	nm.indexFile.Close()
+	os.Remove(idx.Name())
+	v.readOnly = true
 	return nil
 }
 

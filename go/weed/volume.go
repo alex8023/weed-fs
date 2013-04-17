@@ -86,6 +86,16 @@ func vacuumVolumeCommitHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	debug("commit compact volume =", r.FormValue("volume"), ", error =", err)
 }
+func freezeVolumeHandler(w http.ResponseWriter, r *http.Request) {
+	//TODO: notify master that this volume will be read-only
+	err := store.FreezeVolume(r.FormValue("volume"))
+	if err == nil {
+		writeJsonQuiet(w, r, map[string]interface{}{"error": ""})
+	} else {
+		writeJsonQuiet(w, r, map[string]string{"error": err.Error()})
+	}
+	debug("freeze volume =", r.FormValue("volume"), ", error =", err)
+}
 func storeHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
@@ -289,6 +299,7 @@ func runVolume(cmd *Command, args []string) bool {
 	http.HandleFunc("/admin/vacuum_volume_check", vacuumVolumeCheckHandler)
 	http.HandleFunc("/admin/vacuum_volume_compact", vacuumVolumeCompactHandler)
 	http.HandleFunc("/admin/vacuum_volume_commit", vacuumVolumeCommitHandler)
+	http.HandleFunc("/admin/freeze_volume", freezeVolumeHandler)
 
 	go func() {
 		connected := true
