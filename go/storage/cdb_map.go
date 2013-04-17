@@ -133,6 +133,16 @@ func (m cdbMap) Visit(visit func(NeedleValue) error) (err error) {
 
 // converts an .idx index to a cdb
 func ConvertIndexToCdb(cdbName string, index *os.File) error {
+	idx, err := LoadNeedleMap(index)
+	if err != nil {
+		return fmt.Errorf("error loading needle map %s: %s", index, err)
+	}
+	defer idx.Close()
+	return DumpNeedleMapToCdb(cdbName, idx)
+}
+
+// dumps a NeedleMap into a cdb
+func DumpNeedleMapToCdb(cdbName string, nm *NeedleMap) error {
 	tempnam := cdbName + "t"
 	fnames := make([]string, 1, 2)
 	adder, closer, err := openTempCdb(tempnam)
@@ -162,23 +172,18 @@ func ConvertIndexToCdb(cdbName string, index *os.File) error {
 		fcount++
 		return adder(elt)
 	}
-	idx, err := LoadNeedleMap(index)
-	if err != nil {
-		return fmt.Errorf("error loading needle map %s: %s", index, err)
-	}
-	defer idx.Close()
 	// and write out the cdb from there
-	err = idx.Visit(func(nv NeedleValue) error {
+	err = nm.Visit(func(nv NeedleValue) error {
 		return walk(uint64(nv.Key), nv.Offset, nv.Size)
 	})
 	if err != nil {
 		closer()
-		return fmt.Errorf("error walking index %s: %s", index, err)
+		return fmt.Errorf("error walking index %s: %s", nm, err)
 	}
 	// store fileBytes
-	data, e := json.Marshal(idx.mapMetric)
+	data, e := json.Marshal(nm.mapMetric)
 	if e != nil {
-		return fmt.Errorf("error marshaling metric %s: %s", idx.mapMetric, e)
+		return fmt.Errorf("error marshaling metric %s: %s", nm.mapMetric, e)
 	}
 	if err = adder(cdb.Element{Key: []byte{'M'}, Data: data}); err != nil {
 		return err
