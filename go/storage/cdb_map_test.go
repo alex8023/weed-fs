@@ -4,6 +4,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"runtime"
 	"testing"
 )
 
@@ -23,27 +24,82 @@ func TestCdbMap0Convert(t *testing.T) {
 	}
 }
 
-func BenchmarkCdbMap1List(t *testing.B) {
+func TestCdbMap1Mem(t *testing.T) {
+	var nm NeedleMapper
+	i := 0
+	visit := func(nv NeedleValue) error {
+		i++
+		return nil
+	}
+
+	a := getMemStats()
+	t.Logf("opening %s.cdb", testIndexFilename)
+	nm, err := OpenCdbMap(testIndexFilename + ".cdb")
+	if err != nil {
+		t.Fatalf("error opening cdb: %s", err)
+	}
+	b := getMemStats()
+	log.Printf("opening cdb consumed %d bytes", b-a)
+	defer nm.Close()
+
+	a = getMemStats()
+	if err = nm.Visit(visit); err != nil {
+		t.Fatalf("error visiting %s: %s", nm, err)
+	}
+	b = getMemStats()
+	log.Printf("visit cdb %d consumed %d bytes", i, b-a)
+	nm.Close()
+
+	indexFile, err := os.Open(testIndexFilename)
+	if err != nil {
+		t.Fatalf("error opening idx: %s", err)
+	}
+	a = getMemStats()
+	nm, err = LoadNeedleMap(indexFile)
+	if err != nil {
+		t.Fatalf("error loading idx: %s", err)
+	}
+	defer nm.Close()
+	b = getMemStats()
+	log.Printf("opening idx consumed %d bytes", b-a)
+
+	i = 0
+	a = getMemStats()
+	if err = nm.Visit(visit); err != nil {
+		t.Fatalf("error visiting %s: %s", nm, err)
+	}
+	b = getMemStats()
+	log.Printf("visit idx %d consumed %d bytes", i, b-a)
+}
+
+func BenchmarkCdbMap9List(t *testing.B) {
 	t.StopTimer()
 	indexFile, err := os.Open(testIndexFilename)
 	if err != nil {
 		t.Fatalf("cannot open %s: %s", testIndexFilename, err)
 	}
 	defer indexFile.Close()
+
+	a := getMemStats()
 	t.Logf("opening %s", indexFile)
 	idx, err := LoadNeedleMap(indexFile)
 	if err != nil {
 		t.Fatalf("cannot load %s: %s", indexFile, err)
 	}
 	defer idx.Close()
+	b := getMemStats()
+	log.Printf("LoadNeedleMap consumed %d bytes", b-a)
 
 	cdbFn := testIndexFilename + ".cdb"
+	a = getMemStats()
 	t.Logf("opening %s", cdbFn)
 	m, err := OpenCdbMap(cdbFn)
 	if err != nil {
 		t.Fatalf("error opening %s: %s", cdbFn, err)
 	}
 	defer m.Close()
+	b = getMemStats()
+	log.Printf("OpenCdbMap consumed %d bytes", b-a)
 
 	i := 0
 	log.Printf("checking whether the cdb contains every key")
@@ -100,4 +156,13 @@ func BenchmarkCdbMap1List(t *testing.B) {
 	if err != nil {
 		t.Errorf("error visiting index: %s", err)
 	}
+}
+
+var mem = new(runtime.MemStats)
+
+// returns MemStats.Alloc after a GC
+func getMemStats() int64 {
+	runtime.GC()
+	runtime.ReadMemStats(mem)
+	return int64(mem.Alloc)
 }
