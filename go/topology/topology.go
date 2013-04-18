@@ -115,8 +115,12 @@ func (t *Topology) PickForWrite(repType storage.ReplicationType, count int) (str
 func (t *Topology) GetVolumeLayout(repType storage.ReplicationType) *VolumeLayout {
 	replicationTypeIndex := repType.GetReplicationLevelIndex()
 	if t.replicaType2VolumeLayout[replicationTypeIndex] == nil {
+        pickPreferOld := false
+        if t.configuration != nil {
+            pickPreferOld = t.configuration.PickPreferOld
+        }
 		t.replicaType2VolumeLayout[replicationTypeIndex] = NewVolumeLayout(repType, t.volumeSizeLimit, t.pulse,
-			t.configuration.PickPreferOld)
+			pickPreferOld)
 	}
 	return t.replicaType2VolumeLayout[replicationTypeIndex]
 }
