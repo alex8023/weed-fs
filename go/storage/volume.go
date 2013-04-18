@@ -253,24 +253,18 @@ func (v *Volume) freeze() error {
 	}
 	v.accessLock.Lock()
 	defer v.accessLock.Unlock()
-	indexFilename := nm.indexFile.Name()
-	idx, err := os.Open(indexFilename)
+	bn, _ := nakeFilename(v.dataFile.Name())
+	cdbFn := bn + ".cdb"
+	log.Printf("converting %s to %s", nm.indexFile.Name(), cdbFn)
+	err := DumpNeedleMapToCdb(cdbFn, nm)
 	if err != nil {
 		return err
 	}
-	bn, _ := nakeFilename(v.dataFile.Name())
-	cdbFn := bn + ".cdb"
-	log.Printf("converting %s to %s", idx.Name(), cdbFn)
-	if err = ConvertIndexToCdb(cdbFn, idx); err != nil {
-		idx.Close()
-		return err
-	}
-	idx.Close()
 	if v.nm, err = OpenCdbMap(cdbFn); err != nil {
 		return err
 	}
 	nm.indexFile.Close()
-	os.Remove(idx.Name())
+	os.Remove(nm.indexFile.Name())
 	v.readOnly = true
 	return nil
 }
