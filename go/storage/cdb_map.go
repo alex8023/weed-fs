@@ -226,8 +226,5 @@ func openTempCdb(fileName string) (cdb.AdderFunc, cdb.CloserFunc, error) {
 // returns filename without extension, and the extension
 func nakeFilename(fileName string) (string, string) {
 	ext := filepath.Ext(fileName)
-	if ext == "" {
-		return fileName, ""
-	}
 	return fileName[:len(fileName)-len(ext)], ext
 }
