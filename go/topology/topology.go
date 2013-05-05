@@ -101,7 +101,8 @@ func (t *Topology) NextVolumeId() storage.VolumeId {
 func (t *Topology) PickForWrite(repType storage.ReplicationType, count int) (string, int, *DataNode, error) {
 	replicationTypeIndex := repType.GetReplicationLevelIndex()
 	if t.replicaType2VolumeLayout[replicationTypeIndex] == nil {
-		t.replicaType2VolumeLayout[replicationTypeIndex] = NewVolumeLayout(repType, t.volumeSizeLimit, t.pulse)
+		t.replicaType2VolumeLayout[replicationTypeIndex] = NewVolumeLayout(repType, t.volumeSizeLimit, t.pulse,
+			t.configuration.PickPreferOld)
 	}
 	vid, count, datanodes, err := t.replicaType2VolumeLayout[replicationTypeIndex].PickForWrite(count)
 	if err != nil || datanodes.Length() == 0 {
@@ -114,7 +115,12 @@ func (t *Topology) PickForWrite(repType storage.ReplicationType, count int) (str
 func (t *Topology) GetVolumeLayout(repType storage.ReplicationType) *VolumeLayout {
 	replicationTypeIndex := repType.GetReplicationLevelIndex()
 	if t.replicaType2VolumeLayout[replicationTypeIndex] == nil {
-		t.replicaType2VolumeLayout[replicationTypeIndex] = NewVolumeLayout(repType, t.volumeSizeLimit, t.pulse)
+        pickPreferOld := false
+        if t.configuration != nil {
+            pickPreferOld = t.configuration.PickPreferOld
+        }
+		t.replicaType2VolumeLayout[replicationTypeIndex] = NewVolumeLayout(repType, t.volumeSizeLimit, t.pulse,
+			pickPreferOld)
 	}
 	return t.replicaType2VolumeLayout[replicationTypeIndex]
 }
