@@ -99,6 +99,16 @@ func (s *Store) CommitCompactVolume(volumeIdString string) error {
 	}
 	return s.volumes[vid].commitCompact()
 }
+func (s *Store) FreezeVolume(volumeIdString string) error {
+	vid, err := NewVolumeId(volumeIdString)
+	if err != nil {
+		return errors.New("Volume Id " + volumeIdString + " is not a valid unsigned integer!")
+	}
+	if s.volumes[vid].readOnly {
+		return errors.New("Volume " + volumeIdString + " is already read-only")
+	}
+	return s.volumes[vid].freeze()
+}
 func (s *Store) loadExistingVolumes() {
 	if dirs, err := ioutil.ReadDir(s.dir); err == nil {
 		for _, dir := range dirs {
