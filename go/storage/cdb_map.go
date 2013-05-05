@@ -23,6 +23,7 @@ var errReadOnly = errors.New("cannot modify a read-only map")
 
 // opens the cdb file(s) (base.cdb OR base.1.cdb AND base.2.cdb)
 // in case of two files, the metric (at key 'M') must be in base.2.cdb
+// It is an error if only base.1.cdb (or base.2.cdb) exists.
 func OpenCdbMap(fileName string) (m *cdbMap, err error) {
 	m = new(cdbMap)
 	if m.c1, err = cdb.Open(fileName); err == nil {
@@ -31,7 +32,7 @@ func OpenCdbMap(fileName string) (m *cdbMap, err error) {
 		return
 	}
 	if os.IsNotExist(err) {
-		bn, ext := nakeFilename(fileName)
+		bn, ext := noExtensionFilename(fileName)
 		m.fn1 = bn + ".1" + ext
 		if m.c1, err = cdb.Open(m.fn1); err != nil {
 			return nil, err
@@ -142,14 +143,16 @@ func ConvertIndexToCdb(cdbName string, index *os.File) error {
 }
 
 // dumps a NeedleMap into a cdb
+// write only base.cdb iff the index fits into one cdb,
+// and have base.1.cdb + base.2.cdb otherwise.
 func DumpNeedleMapToCdb(cdbName string, nm *NeedleMap) error {
-	tempnam := cdbName + "t"
+	tempName := cdbName + "t"
 	fnames := make([]string, 1, 2)
-	adder, closer, err := openTempCdb(tempnam)
+	adder, closer, err := openTempCdb(tempName)
 	if err != nil {
 		return fmt.Errorf("error creating factory: %s", err)
 	}
-	fnames[0] = tempnam
+	fnames[0] = tempName
 
 	elt := cdb.Element{Key: make([]byte, 8), Data: make([]byte, 8)}
 
@@ -159,11 +162,11 @@ func DumpNeedleMapToCdb(cdbName string, nm *NeedleMap) error {
 			if err = closer(); err != nil {
 				return err
 			}
-			tempnam = cdbName + "t2"
-			if adder, closer, err = openTempCdb(tempnam); err != nil {
+			tempName = cdbName + "t2"
+			if adder, closer, err = openTempCdb(tempName); err != nil {
 				return fmt.Errorf("error creating second factory: %s", err)
 			}
-			fnames = append(fnames, tempnam)
+			fnames = append(fnames, tempName)
 			fcount = 0
 		}
 		util.Uint64toBytes(elt.Key, key)
@@ -196,7 +199,7 @@ func DumpNeedleMapToCdb(cdbName string, nm *NeedleMap) error {
 	if len(fnames) == 1 {
 		return os.Rename(fnames[0], cdbName)
 	}
-	bn, ext := nakeFilename(cdbName)
+	bn, ext := noExtensionFilename(cdbName)
 	if err = os.Rename(fnames[0], bn+".1"+ext); err != nil {
 		return err
 	}
@@ -224,10 +227,8 @@ func openTempCdb(fileName string) (cdb.AdderFunc, cdb.CloserFunc, error) {
 }
 
 // returns filename without extension, and the extension
-func nakeFilename(fileName string) (string, string) {
+func noExtensionFilename(fileName string) (string, string) {
 	ext := filepath.Ext(fileName)
-	if ext == "" {
-		return fileName, ""
-	}
+	// on empty ext this returns fileName, ""
 	return fileName[:len(fileName)-len(ext)], ext
 }

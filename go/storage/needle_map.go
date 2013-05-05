@@ -52,7 +52,7 @@ const (
 
 func LoadNeedleMap(file *os.File) (*NeedleMap, error) {
 	nm := NewNeedleMap(file)
-  bufferReader := bufio.NewReaderSize(nm.indexFile, 1024*1024)
+	bufferReader := bufio.NewReaderSize(nm.indexFile, 1024*1024)
 	bytes := make([]byte, 16*RowsToRead)
 	count, e := bufferReader.Read(bytes)
 	for count > 0 && e == nil {

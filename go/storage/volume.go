@@ -70,10 +70,10 @@ func (v *Volume) load(alsoLoadIndex bool) error {
 		e = v.maybeWriteSuperBlock()
 	}
 	if e == nil && alsoLoadIndex {
-    indexFile, ie := os.OpenFile(fileName+".idx", os.O_RDWR|os.O_CREATE, 0644)
-    if ie != nil {
-      return fmt.Errorf("cannot create Volume Data %s.dat: %s", fileName, e)
-    }
+		indexFile, ie := os.OpenFile(fileName+".idx", os.O_RDWR|os.O_CREATE, 0644)
+		if ie != nil {
+			return fmt.Errorf("cannot create Volume Data %s.dat: %s", fileName, e)
+		}
 		v.nm, e = LoadNeedleMap(indexFile)
 	}
 	return e
