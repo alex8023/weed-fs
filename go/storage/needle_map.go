@@ -8,6 +8,7 @@ import (
 	"os"
 )
 
+// interface for a needle map
 type NeedleMapper interface {
 	Put(key uint64, offset uint32, size uint32) (int, error)
 	Get(key uint64) (element *NeedleValue, ok bool)
@@ -20,6 +21,7 @@ type NeedleMapper interface {
 	Visit(visit func(NeedleValue) error) (err error)
 }
 
+// map metrics
 type mapMetric struct {
 	DeletionCounter     int    `json:"DeletionCounter"`
 	FileCounter         int    `json:"FileCounter"`
@@ -27,6 +29,7 @@ type mapMetric struct {
 	FileByteCounter     uint64 `json:"FileByteCounter"`
 }
 
+// file-backed compact needle map
 type NeedleMap struct {
 	indexFile *os.File
 	m         CompactMap
