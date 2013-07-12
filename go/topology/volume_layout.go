@@ -58,13 +58,13 @@ func (vl *VolumeLayout) PickForWrite(count int, dataCenter string) (*storage.Vol
 		return nil, 0, nil, errors.New("No more writable volumes!")
 	}
 	if dataCenter == "" {
-        i := 0
-        if len_writers > 1 {
-            i = rand.Intn(len_writers + 1)
-            if i >= len_writers {
-                i = 0
-            }
-        }
+		i := 0
+		if len_writers > 1 {
+			i = rand.Intn(len_writers + 1)
+			if i >= len_writers {
+				i = 0
+			}
+		}
 		vid := vl.writables[i]
 		locationList := vl.vid2location[vid]
 		if locationList != nil {
