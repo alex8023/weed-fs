@@ -29,17 +29,17 @@ var cmdVolume = &Command{
 }
 
 var (
-	vport          = cmdVolume.Flag.Int("port", 8080, "http listen port")
-	volumeFolder   = cmdVolume.Flag.String("dir", "/tmp", "directory to store data files")
-	ip             = cmdVolume.Flag.String("ip", "localhost", "ip or server name")
-	publicUrl      = cmdVolume.Flag.String("publicUrl", "", "Publicly accessible <ip|server_name>:<port>")
-	masterNode     = cmdVolume.Flag.String("mserver", "localhost:9333", "master server location")
-	vpulse         = cmdVolume.Flag.Int("pulseSeconds", 5, "number of seconds between heartbeats, must be smaller than the master's setting")
-	maxVolumeCount = cmdVolume.Flag.Int("max", 7, "maximum number of volumes")
-	vReadTimeout   = cmdVolume.Flag.Int("readTimeout", 3, "connection read timeout in seconds")
-	vMaxCpu        = cmdVolume.Flag.Int("maxCpu", 0, "maximum number of CPUs. 0 means all available CPUs")
-	dataCenter     = cmdVolume.Flag.String("dataCenter", "", "current volume server's data center name")
-	rack           = cmdVolume.Flag.String("rack", "", "current volume server's rack name")
+	vport           = cmdVolume.Flag.Int("port", 8080, "http listen port")
+	volumeFolders   = cmdVolume.Flag.String("dir", "/tmp", "directories to store data files. dir[,dir]...")
+	maxVolumeCounts = cmdVolume.Flag.String("max", "7", "maximum numbers of volumes, count[,count]...")
+	ip              = cmdVolume.Flag.String("ip", "localhost", "ip or server name")
+	publicUrl       = cmdVolume.Flag.String("publicUrl", "", "Publicly accessible <ip|server_name>:<port>")
+	masterNode      = cmdVolume.Flag.String("mserver", "localhost:9333", "master server location")
+	vpulse          = cmdVolume.Flag.Int("pulseSeconds", 5, "number of seconds between heartbeats, must be smaller than the master's setting")
+	vReadTimeout    = cmdVolume.Flag.Int("readTimeout", 3, "connection read timeout in seconds")
+	vMaxCpu         = cmdVolume.Flag.Int("maxCpu", 0, "maximum number of CPUs. 0 means all available CPUs")
+	dataCenter      = cmdVolume.Flag.String("dataCenter", "", "current volume server's data center name")
+	rack            = cmdVolume.Flag.String("rack", "", "current volume server's rack name")
 
 	store *storage.Store
 )
@@ -112,7 +112,7 @@ func storeHandler(w http.ResponseWriter, r *http.Request) {
 }
 func GetOrHeadHandler(w http.ResponseWriter, r *http.Request, isGetMethod bool) {
 	n := new(storage.Needle)
-	vid, fid, ext := parseURLPath(r.URL.Path)
+	vid, fid, filename, ext := parseURLPath(r.URL.Path)
 	volumeId, err := storage.NewVolumeId(vid)
 	if err != nil {
 		debug("parsing error:", err, r.URL.Path)
@@ -156,11 +156,11 @@ func GetOrHeadHandler(w http.ResponseWriter, r *http.Request, isGetMethod bool) 
 			}
 		}
 	}
-	if n.NameSize > 0 {
-		fname := string(n.Name)
-		dotIndex := strings.LastIndex(fname, ".")
+	if n.NameSize > 0 && filename == "" {
+		filename := string(n.Name)
+		dotIndex := strings.LastIndex(filename, ".")
 		if dotIndex > 0 {
-			ext = fname[dotIndex:]
+			ext = filename[dotIndex:]
 		}
 	}
 	mtype := ""
@@ -173,8 +173,8 @@ func GetOrHeadHandler(w http.ResponseWriter, r *http.Request, isGetMethod bool) 
 	if mtype != "" {
 		w.Header().Set("Content-Type", mtype)
 	}
-	if n.NameSize > 0 {
-		w.Header().Set("Content-Disposition", "filename="+fileNameEscaper.Replace(string(n.Name)))
+	if filename != "" {
+		w.Header().Set("Content-Disposition", "filename="+fileNameEscaper.Replace(filename))
 	}
 	if ext != ".gz" {
 		if n.IsGzipped() {
@@ -200,7 +200,7 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 		writeJsonQuiet(w, r, e)
 		return
 	}
-	vid, _, _ := parseURLPath(r.URL.Path)
+	vid, _, _, _ := parseURLPath(r.URL.Path)
 	volumeId, e := storage.NewVolumeId(vid)
 	if e != nil {
 		debug("NewVolumeId error:", e)
@@ -229,7 +229,7 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 }
 func DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	n := new(storage.Needle)
-	vid, fid, _ := parseURLPath(r.URL.Path)
+	vid, fid, _, _ := parseURLPath(r.URL.Path)
 	volumeId, _ := storage.NewVolumeId(vid)
 	n.ParsePath(fid)
 
@@ -264,23 +264,28 @@ func DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	writeJsonQuiet(w, r, m)
 }
 
-func parseURLPath(path string) (vid, fid, ext string) {
-
-	sepIndex := strings.LastIndex(path, "/")
-	commaIndex := strings.LastIndex(path[sepIndex:], ",")
-	if commaIndex <= 0 {
-		if "favicon.ico" != path[sepIndex+1:] {
-			log.Println("unknown file id", path[sepIndex+1:])
+func parseURLPath(path string) (vid, fid, filename, ext string) {
+	if strings.Count(path, "/") == 3 {
+		parts := strings.Split(path, "/")
+		vid, fid, filename = parts[1], parts[2], parts[3]
+		ext = filename[strings.LastIndex(filename, "."):]
+	} else {
+		sepIndex := strings.LastIndex(path, "/")
+		commaIndex := strings.LastIndex(path[sepIndex:], ",")
+		if commaIndex <= 0 {
+			if "favicon.ico" != path[sepIndex+1:] {
+				log.Println("unknown file id", path[sepIndex+1:])
+			}
+			return
 		}
-		return
-	}
-	dotIndex := strings.LastIndex(path[sepIndex:], ".")
-	vid = path[sepIndex+1 : commaIndex]
-	fid = path[commaIndex+1:]
-	ext = ""
-	if dotIndex > 0 {
-		fid = path[commaIndex+1 : dotIndex]
-		ext = path[dotIndex:]
+		dotIndex := strings.LastIndex(path[sepIndex:], ".")
+		vid = path[sepIndex+1 : commaIndex]
+		fid = path[commaIndex+1:]
+		ext = ""
+		if dotIndex > 0 {
+			fid = path[commaIndex+1 : dotIndex]
+			ext = path[dotIndex:]
+		}
 	}
 	return
 }
@@ -290,21 +295,37 @@ func runVolume(cmd *Command, args []string) bool {
 		*vMaxCpu = runtime.NumCPU()
 	}
 	runtime.GOMAXPROCS(*vMaxCpu)
-	fileInfo, err := os.Stat(*volumeFolder)
-	if err != nil {
-		log.Fatalf("No Existing Folder:%s", *volumeFolder)
+	folders := strings.Split(*volumeFolders, ",")
+	maxCountStrings := strings.Split(*maxVolumeCounts, ",")
+	maxCounts := make([]int, 0)
+	for _, maxString := range maxCountStrings {
+		if max, e := strconv.Atoi(maxString); e == nil {
+			maxCounts = append(maxCounts, max)
+		} else {
+			log.Fatalf("The max specified in -max not a valid number %d", max)
+		}
 	}
-	if !fileInfo.IsDir() {
-		log.Fatalf("Volume Folder should not be a file:%s", *volumeFolder)
+	if len(folders) != len(maxCounts) {
+		log.Fatalf("%d directories by -dir, but only %d max is set by -max", len(folders), len(maxCounts))
 	}
-	perm := fileInfo.Mode().Perm()
-	log.Println("Volume Folder permission:", perm)
+	for _, folder := range folders {
+		fileInfo, err := os.Stat(folder)
+		if err != nil {
+			log.Fatalf("No Existing Folder:%s", folder)
+		}
+		if !fileInfo.IsDir() {
+			log.Fatalf("Volume Folder should not be a file:%s", folder)
+		}
+		perm := fileInfo.Mode().Perm()
+    log.Println("Volume Folder", folder)
+		log.Println("Permission:", perm)
+	}
 
 	if *publicUrl == "" {
 		*publicUrl = *ip + ":" + strconv.Itoa(*vport)
 	}
 
-	store = storage.NewStore(*vport, *ip, *publicUrl, *volumeFolder, *maxVolumeCount)
+	store = storage.NewStore(*vport, *ip, *publicUrl, folders, maxCounts)
 	defer store.Close()
 	http.HandleFunc("/", storeHandler)
 	http.HandleFunc("/status", statusHandler)

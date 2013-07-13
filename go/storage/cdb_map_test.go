@@ -113,7 +113,7 @@ func BenchmarkCdbMap9List(t *testing.B) {
 			log.Printf("%d. %s", i, nv)
 		}
 		if nv2, ok := m.Get(uint64(nv.Key)); !ok || nv2 == nil {
-			t.Errorf("%s in index, not in cdb", nv.Key)
+			t.Errorf("%d in index, not in cdb", nv.Key)
 		} else if nv2.Key != nv.Key {
 			t.Errorf("requested key %d from cdb, got %d", nv.Key, nv2.Key)
 		} else if nv2.Offset != nv.Offset {
@@ -137,7 +137,7 @@ func BenchmarkCdbMap9List(t *testing.B) {
 			return nil
 		}
 		if nv2, ok := m.Get(uint64(nv.Key)); !ok || nv2 == nil {
-			t.Errorf("%s in cdb, not in index", nv.Key)
+			t.Errorf("%d in cdb, not in index", nv.Key)
 		} else if nv2.Key != nv.Key {
 			t.Errorf("requested key %d from index, got %d", nv.Key, nv2.Key)
 		} else if nv2.Offset != nv.Offset {
