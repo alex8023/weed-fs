@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -78,7 +79,7 @@ func (v *Volume) load(alsoLoadIndex bool) error {
 			if indexFile != nil {
 				log.Printf("converting %s.idx to %s.cdb", fileName, fileName)
 				if e = ConvertIndexToCdb(fileName+".cdb", indexFile); e != nil {
-					log.Printf("error converting %s.idx to %s.cdb: %s", fileName, fileName)
+					log.Printf("error converting %s.idx to %s.cdb: %s", fileName, fileName, e)
 				} else {
 					indexFile.Close()
 					os.Remove(indexFile.Name())
@@ -166,16 +167,13 @@ func (v *Volume) isFileUnchanged(n *Needle) bool {
 		}
 		oldNeedle := new(Needle)
 		oldNeedle.Read(v.dataFile, nv.Size, v.Version())
-		if len(oldNeedle.Data) == len(n.Data) && oldNeedle.Checksum == n.Checksum {
-			length := len(n.Data)
-			for i := 0; i < length; i++ {
-				if n.Data[i] != oldNeedle.Data[i] {
-					return false
-				}
-			}
-			n.Size = oldNeedle.Size
-			return true
+		if !(len(oldNeedle.Data) == len(n.Data) &&
+			oldNeedle.Checksum == n.Checksum &&
+			bytes.Equal(n.Data, oldNeedle.Data)) {
+			return false
 		}
+		n.Size = oldNeedle.Size
+		return true
 	}
 	return false
 }

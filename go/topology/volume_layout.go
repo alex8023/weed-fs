@@ -81,7 +81,6 @@ func (vl *VolumeLayout) PickForWrite(count int, dataCenter string) (*storage.Vol
 		}
 		return &vid, count, locationList, nil
 	}
-	return nil, 0, nil, errors.New("Strangely This Should Never Have Happened!")
 }
 
 func (vl *VolumeLayout) GetActiveVolumeCount(dataCenter string) int {

@@ -302,7 +302,7 @@ func runVolume(cmd *Command, args []string) bool {
 		if max, e := strconv.Atoi(maxString); e == nil {
 			maxCounts = append(maxCounts, max)
 		} else {
-			log.Fatalf("The max specified in -max not a valid number %s", max)
+			log.Fatalf("The max specified in -max not a valid number %d", max)
 		}
 	}
 	if len(folders) != len(maxCounts) {
