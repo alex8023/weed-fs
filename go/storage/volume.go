@@ -108,7 +108,7 @@ func (v *Volume) Size() int64 {
 	if e == nil {
 		return stat.Size()
 	}
-	fmt.Printf("Failed to read file size %s %s\n", v.dataFile.Name(), e.Error())
+	log.Printf("Failed to read file size %s %s\n", v.dataFile.Name(), e.Error())
 	return -1
 }
 func (v *Volume) Close() {
@@ -120,7 +120,7 @@ func (v *Volume) Close() {
 func (v *Volume) maybeWriteSuperBlock() error {
 	stat, e := v.dataFile.Stat()
 	if e != nil {
-		fmt.Printf("failed to stat datafile %s: %s", v.dataFile, e)
+		log.Printf("failed to stat datafile %s: %s", v.dataFile, e)
 		return e
 	}
 	if stat.Size() == 0 {
@@ -167,10 +167,9 @@ func (v *Volume) isFileUnchanged(n *Needle) bool {
 		}
 		oldNeedle := new(Needle)
 		oldNeedle.Read(v.dataFile, nv.Size, v.Version())
-		if !(len(oldNeedle.Data) == len(n.Data) &&
-			oldNeedle.Checksum == n.Checksum &&
-			bytes.Equal(n.Data, oldNeedle.Data)) {
-			return false
+		if oldNeedle.Checksum == n.Checksum && bytes.Equal(oldNeedle.Data, n.Data) {
+			n.Size = oldNeedle.Size
+			return true
 		}
 		n.Size = oldNeedle.Size
 		return true

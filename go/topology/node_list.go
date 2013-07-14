@@ -2,7 +2,7 @@ package topology
 
 import (
 	"code.google.com/p/weed-fs/go/storage"
-	"fmt"
+	"log"
 	"math/rand"
 )
 
@@ -70,7 +70,7 @@ func (nl *NodeList) ReserveOneVolume(randomVolumeIndex int, vid storage.VolumeId
 			randomVolumeIndex -= freeSpace
 		} else {
 			if node.IsDataNode() && node.FreeSpace() > 0 {
-				fmt.Println("vid =", vid, " assigned to node =", node, ", freeSpace =", node.FreeSpace())
+				log.Println("vid =", vid, " assigned to node =", node, ", freeSpace =", node.FreeSpace())
 				return true, node.(*DataNode)
 			}
 			children := node.Children()

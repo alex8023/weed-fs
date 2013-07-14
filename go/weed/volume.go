@@ -9,6 +9,7 @@ import (
 	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -265,11 +266,20 @@ func DeleteHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func parseURLPath(path string) (vid, fid, filename, ext string) {
-	if strings.Count(path, "/") == 3 {
+	switch strings.Count(path, "/") {
+	case 3:
 		parts := strings.Split(path, "/")
 		vid, fid, filename = parts[1], parts[2], parts[3]
-		ext = filename[strings.LastIndex(filename, "."):]
-	} else {
+		ext = filepath.Ext(filename)
+	case 2:
+    parts := strings.Split(path, "/")
+    vid, fid = parts[1], parts[2]
+    dotIndex := strings.LastIndex(fid, ".")
+    if dotIndex > 0 {
+      ext = fid[dotIndex:]
+      fid = fid[0:dotIndex]
+    }
+	default:
 		sepIndex := strings.LastIndex(path, "/")
 		commaIndex := strings.LastIndex(path[sepIndex:], ",")
 		if commaIndex <= 0 {

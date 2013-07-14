@@ -9,22 +9,29 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 )
 
-var uploadReplication *string
+var (
+	uploadReplication *string
+	uploadDir         *string
+	include           *string
+)
 
 func init() {
 	cmdUpload.Run = runUpload // break init cycle
 	cmdUpload.IsDebug = cmdUpload.Flag.Bool("debug", false, "verbose debug information")
 	server = cmdUpload.Flag.String("server", "localhost:9333", "weedfs master location")
+	uploadDir = cmdUpload.Flag.String("dir", "", "Upload the whole folder recursively if specified.")
+	include = cmdUpload.Flag.String("include", "", "pattens of files to upload, e.g., *.pdf, *.html, ab?d.txt, works together with -dir")
 	uploadReplication = cmdUpload.Flag.String("replication", "000", "replication type(000,001,010,100,110,200)")
 }
 
 var cmdUpload = &Command{
-	UsageLine: "upload -server=localhost:9333 file1 [file2 file3]",
+	UsageLine: "upload -server=localhost:9333 file1 [file2 file3]\n upload -server=localhost:9333 -dir=one_directory -include=*.pdf",
 	Short:     "upload one or a list of files",
-	Long: `upload one or a list of files. 
+	Long: `upload one or a list of files, or batch upload one whole folder recursively.
   It uses consecutive file keys for the list of files.
   e.g. If the file1 uses key k, file2 can be read via k_1
 
@@ -86,13 +93,18 @@ type SubmitResult struct {
 	Error    string `json:"error"`
 }
 
-func submit(files []string) []SubmitResult {
+func submit(files []string) ([]SubmitResult, error) {
+	results := make([]SubmitResult, len(files))
+	for index, file := range files {
+		results[index].FileName = file
+	}
 	ret, err := assign(len(files))
 	if err != nil {
-		fmt.Println(err)
-		return nil
+		for index, _ := range files {
+			results[index].Error = err.Error()
+		}
+		return results, err
 	}
-	results := make([]SubmitResult, len(files))
 	for index, file := range files {
 		fid := ret.Fid
 		if index > 0 {
@@ -103,19 +115,41 @@ func submit(files []string) []SubmitResult {
 			fid = ""
 			results[index].Error = err.Error()
 		}
-		results[index].FileName = file
 		results[index].Fid = fid
 		results[index].FileUrl = ret.PublicUrl + "/" + fid
 	}
-	return results
+	return results, nil
 }
 
 func runUpload(cmd *Command, args []string) bool {
 	if len(cmdUpload.Flag.Args()) == 0 {
-		return false
+		if *uploadDir == "" {
+			return false
+		}
+		filepath.Walk(*uploadDir, func(path string, info os.FileInfo, err error) error {
+			if err == nil {
+				if !info.IsDir() {
+					if *include != "" {
+						if ok, _ := filepath.Match(*include, filepath.Base(path)); !ok {
+							return nil
+						}
+					}
+					results, e := submit([]string{path})
+					bytes, _ := json.Marshal(results)
+					fmt.Println(string(bytes))
+					if e != nil {
+						return e
+					}
+				}
+			} else {
+				fmt.Println(err)
+			}
+			return err
+		})
+	} else {
+		results, _ := submit(args)
+		bytes, _ := json.Marshal(results)
+		fmt.Println(string(bytes))
 	}
-	results := submit(args)
-	bytes, _ := json.Marshal(results)
-	fmt.Print(string(bytes))
 	return true
 }
