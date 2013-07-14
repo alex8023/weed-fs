@@ -20,9 +20,9 @@ type topology struct {
 	DataCenters []dataCenter `xml:"DataCenter"`
 }
 type Configuration struct {
-	XMLName       xml.Name `xml:"Configuration"`
-	Topo          topology `xml:"Topology"`
-	ip2location   map[string]loc
+	XMLName     xml.Name `xml:"Configuration"`
+	Topo        topology `xml:"Topology"`
+	ip2location map[string]loc
 }
 
 func NewConfiguration(b []byte) (*Configuration, error) {

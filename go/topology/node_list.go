@@ -58,7 +58,7 @@ func (nl *NodeList) RandomlyPickN(count int, minSpace int, firstNodeName string)
 		list[r], list[i-1] = list[i-1], list[r]
 	}
 	if firstNodeName != "" {
-	  list[0] = *preferredNode
+		list[0] = *preferredNode
 	}
 	return list[:count], true
 }

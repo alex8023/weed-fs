@@ -317,7 +317,7 @@ func runVolume(cmd *Command, args []string) bool {
 			log.Fatalf("Volume Folder should not be a file:%s", folder)
 		}
 		perm := fileInfo.Mode().Perm()
-    log.Println("Volume Folder", folder)
+		log.Println("Volume Folder", folder)
 		log.Println("Permission:", perm)
 	}
 
