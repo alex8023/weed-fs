@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
 	"strconv"
+	"strings"
 )
 
 var (
@@ -25,15 +27,25 @@ func init() {
 	server = cmdUpload.Flag.String("server", "localhost:9333", "weedfs master location")
 	uploadDir = cmdUpload.Flag.String("dir", "", "Upload the whole folder recursively if specified.")
 	include = cmdUpload.Flag.String("include", "", "pattens of files to upload, e.g., *.pdf, *.html, ab?d.txt, works together with -dir")
-	uploadReplication = cmdUpload.Flag.String("replication", "000", "replication type(000,001,010,100,110,200)")
+	uploadReplication = cmdUpload.Flag.String("replication", "", "replication type(000,001,010,100,110,200)")
 }
 
 var cmdUpload = &Command{
 	UsageLine: "upload -server=localhost:9333 file1 [file2 file3]\n upload -server=localhost:9333 -dir=one_directory -include=*.pdf",
 	Short:     "upload one or a list of files",
 	Long: `upload one or a list of files, or batch upload one whole folder recursively.
+	
+	If uploading a list of files:
   It uses consecutive file keys for the list of files.
   e.g. If the file1 uses key k, file2 can be read via k_1
+
+  If uploading a whole folder recursively:
+  All files under the folder and subfolders will be uploaded, each with its own file key.
+  Optional parameter "-include" allows you to specify the file name patterns.
+  
+  If any file has a ".gz" extension, the content are considered gzipped already, and will be stored as is.
+  This can save volume server's gzipped processing and allow customizable gzip compression level.
+  The file name will strip out ".gz" and stored. For example, "jquery.js.gz" will be stored as "jquery.js".
 
   `,
 }
@@ -49,7 +61,9 @@ type AssignResult struct {
 func assign(count int) (*AssignResult, error) {
 	values := make(url.Values)
 	values.Add("count", strconv.Itoa(count))
-	values.Add("replication", *uploadReplication)
+	if *uploadReplication != "" {
+		values.Add("replication", *uploadReplication)
+	}
 	jsonBlob, err := util.Post("http://"+*server+"/dir/assign", values)
 	debug("assign result :", string(jsonBlob))
 	if err != nil {
@@ -78,7 +92,13 @@ func upload(filename string, server string, fid string) (int, error) {
 		debug("Failed to stat file:", filename)
 		return 0, fiErr
 	}
-	ret, e := operation.Upload("http://"+server+"/"+fid+"?ts="+strconv.Itoa(int(fi.ModTime().Unix())), path.Base(filename), fh)
+	filename = path.Base(filename)
+	isGzipped := path.Ext(filename) == ".gz"
+	if isGzipped {
+		filename = filename[0 : len(filename)-3]
+	}
+	mtype := mime.TypeByExtension(strings.ToLower(filepath.Ext(filename)))
+	ret, e := operation.Upload("http://"+server+"/"+fid+"?ts="+strconv.Itoa(int(fi.ModTime().Unix())), filename, fh, isGzipped, mtype)
 	if e != nil {
 		return 0, e
 	}

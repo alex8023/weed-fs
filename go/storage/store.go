@@ -90,14 +90,18 @@ func (s *Store) findFreeLocation() (ret *DiskLocation) {
 	}
 	return ret
 }
-func (s *Store) addVolume(vid VolumeId, replicationType ReplicationType) (err error) {
+func (s *Store) addVolume(vid VolumeId, replicationType ReplicationType) error {
 	if s.findVolume(vid) != nil {
 		return fmt.Errorf("Volume Id %s already exists!", vid)
 	}
 	if location := s.findFreeLocation(); location != nil {
 		log.Println("In dir", location.directory, "adds volume =", vid, ", replicationType =", replicationType)
-		location.volumes[vid], err = NewVolume(location.directory, vid, replicationType)
-		return err
+		if volume, err := NewVolume(location.directory, vid, replicationType); err == nil {
+      location.volumes[vid] = volume
+      return nil
+		} else {
+      return err
+		}
 	}
 	return fmt.Errorf("No more free space left")
 }
@@ -146,9 +150,8 @@ func (s *Store) FreezeVolume(volumeIdString string) error {
 			return fmt.Errorf("Volume %s is already read-only", volumeIdString)
 		}
 		return v.freeze()
-	} else {
-		return fmt.Errorf("volume id %s is not found during freeze!", vid)
 	}
+	return fmt.Errorf("volume id %s is not found during freeze!", vid)
 }
 func (l *DiskLocation) loadExistingVolumes() {
 	if dirs, err := ioutil.ReadDir(l.directory); err == nil {
