@@ -1,9 +1,9 @@
 package topology
 
 import (
+	"code.google.com/p/weed-fs/go/glog"
 	"code.google.com/p/weed-fs/go/storage"
 	"errors"
-	"log"
 	"math/rand"
 	"sync"
 )
@@ -38,6 +38,8 @@ func (vl *VolumeLayout) RegisterVolume(v *storage.VolumeInfo, dn *DataNode) {
 		if len(vl.vid2location[v.Id].list) == v.RepType.GetCopyCount() {
 			if vl.isWritable(v) {
 				vl.writables = append(vl.writables, v.Id)
+			} else {
+				vl.removeFromWritable(v.Id)
 			}
 		}
 	}
@@ -59,7 +61,7 @@ func (vl *VolumeLayout) Lookup(vid storage.VolumeId) []*DataNode {
 func (vl *VolumeLayout) PickForWrite(count int, dataCenter string) (*storage.VolumeId, int, *VolumeLocationList, error) {
 	len_writers := len(vl.writables)
 	if len_writers <= 0 {
-		log.Println("No more writable volumes!")
+		glog.V(0).Infoln("No more writable volumes!")
 		return nil, 0, nil, errors.New("No more writable volumes!")
 	}
 	if dataCenter == "" {
@@ -111,12 +113,17 @@ func (vl *VolumeLayout) GetActiveVolumeCount(dataCenter string) int {
 }
 
 func (vl *VolumeLayout) removeFromWritable(vid storage.VolumeId) bool {
-	for i, v := range vl.writables {
-		if v == vid {
-			log.Println("Volume", vid, "becomes unwritable")
-			vl.writables = append(vl.writables[:i], vl.writables[i+1:]...)
-			return true
+	toDeleteIndex := -1
+	for k, id := range vl.writables {
+		if id == vid {
+			toDeleteIndex = k
+			break
 		}
+	}
+	if toDeleteIndex >= 0 {
+		glog.V(0).Infoln("Volume", vid, "becomes unwritable")
+		vl.writables = append(vl.writables[0:toDeleteIndex], vl.writables[toDeleteIndex+1:]...)
+		return true
 	}
 	return false
 }
@@ -126,7 +133,7 @@ func (vl *VolumeLayout) setVolumeWritable(vid storage.VolumeId) bool {
 			return false
 		}
 	}
-	log.Println("Volume", vid, "becomes writable")
+	glog.V(0).Infoln("Volume", vid, "becomes writable")
 	vl.writables = append(vl.writables, vid)
 	return true
 }
@@ -137,7 +144,7 @@ func (vl *VolumeLayout) SetVolumeUnavailable(dn *DataNode, vid storage.VolumeId)
 
 	if vl.vid2location[vid].Remove(dn) {
 		if vl.vid2location[vid].Length() < vl.repType.GetCopyCount() {
-			log.Println("Volume", vid, "has", vl.vid2location[vid].Length(), "replica, less than required", vl.repType.GetCopyCount())
+			glog.V(0).Infoln("Volume", vid, "has", vl.vid2location[vid].Length(), "replica, less than required", vl.repType.GetCopyCount())
 			return vl.removeFromWritable(vid)
 		}
 	}
@@ -159,7 +166,7 @@ func (vl *VolumeLayout) SetVolumeCapacityFull(vid storage.VolumeId) bool {
 	vl.accessLock.Lock()
 	defer vl.accessLock.Unlock()
 
-	log.Println("Volume", vid, "reaches full capacity.")
+	// glog.V(0).Infoln("Volume", vid, "reaches full capacity.")
 	return vl.removeFromWritable(vid)
 }
 

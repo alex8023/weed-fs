@@ -3,9 +3,8 @@ package storage
 import (
 	"code.google.com/p/weed-fs/go/util"
 	"encoding/hex"
-	"errors"
 	"io/ioutil"
-	"log"
+	"code.google.com/p/weed-fs/go/glog"
 	"mime"
 	"net/http"
 	"path"
@@ -38,68 +37,81 @@ type Needle struct {
 	Padding  []byte `comment:"Aligned to 8 bytes"`
 }
 
-func NewNeedle(r *http.Request) (n *Needle, e error) {
-
-	n = new(Needle)
+func ParseUpload(r *http.Request) (fileName string, data []byte, mimeType string, isGzipped bool, modifiedTime uint64, e error) {
 	form, fe := r.MultipartReader()
 	if fe != nil {
-		log.Println("MultipartReader [ERROR]", fe)
+		glog.V(0).Infoln("MultipartReader [ERROR]", fe)
 		e = fe
 		return
 	}
 	part, fe := form.NextPart()
 	if fe != nil {
-		log.Println("Reading Multi part [ERROR]", fe)
+		glog.V(0).Infoln("Reading Multi part [ERROR]", fe)
 		e = fe
 		return
 	}
-	fname := part.FileName()
-	if fname != "" {
-		fname = path.Base(part.FileName())
-	} else {
-		e = errors.New("No file found!")
+	fileName = part.FileName()
+	if fileName != "" {
+		fileName = path.Base(fileName)
+	}
+
+	data, e = ioutil.ReadAll(part)
+	if e != nil {
+		glog.V(0).Infoln("Reading Content [ERROR]", e)
 		return
 	}
-	data, _ := ioutil.ReadAll(part)
-	dotIndex := strings.LastIndex(fname, ".")
+	dotIndex := strings.LastIndex(fileName, ".")
 	ext, mtype := "", ""
 	if dotIndex > 0 {
-		ext = fname[dotIndex:]
+		ext = strings.ToLower(fileName[dotIndex:])
 		mtype = mime.TypeByExtension(ext)
 	}
 	contentType := part.Header.Get("Content-Type")
-	if contentType != "" && mtype != contentType && len(contentType) < 256 {
-		n.Mime = []byte(contentType)
-		n.SetHasMime()
+	if contentType != "" && mtype != contentType {
+		mimeType = contentType //only return mime type if not deductable
 		mtype = contentType
 	}
 	if part.Header.Get("Content-Encoding") == "gzip" {
-		n.SetGzipped()
+		isGzipped = true
 	} else if IsGzippable(ext, mtype) {
 		if data, e = GzipData(data); e != nil {
 			return
 		}
-		n.SetGzipped()
+		isGzipped = true
 	}
 	if ext == ".gz" {
+		isGzipped = true
+	}
+	if strings.HasSuffix(fileName, ".gz") {
+		fileName = fileName[:len(fileName)-3]
+	}
+	modifiedTime, _ = strconv.ParseUint(r.FormValue("ts"), 10, 64)
+  return
+}
+func NewNeedle(r *http.Request) (n *Needle, e error) {
+  fname, mimeType, isGzipped := "", "", false
+	n = new(Needle)
+	fname, n.Data, mimeType, isGzipped, n.LastModified, e = ParseUpload(r)
+	if e != nil {
+	  return
+	}
+  if len(fname) < 256 {
+    n.Name = []byte(fname)
+    n.SetHasName()
+  }
+	if len(mimeType) < 256 {
+		n.Mime = []byte(mimeType)
+		n.SetHasMime()
+	}
+	if isGzipped {
 		n.SetGzipped()
 	}
-	if len(fname) < 256 {
-		if strings.HasSuffix(fname, ".gz") {
-			n.Name = []byte(fname[:len(fname)-3])
-		} else {
-			n.Name = []byte(fname)
-		}
-		n.SetHasName()
-	}
-	var parseError error
-	if n.LastModified, parseError = strconv.ParseUint(r.FormValue("ts"), 10, 64); parseError != nil {
+	if n.LastModified == 0 {
 		n.LastModified = uint64(time.Now().Unix())
+    n.SetHasLastModifiedDate()
 	}
-	n.SetHasLastModifiedDate()
 
-	n.Data = data
-	n.Checksum = NewCRC(data)
+	n.Checksum = NewCRC(n.Data)
 
 	commaSep := strings.LastIndex(r.URL.Path, ",")
 	dotSep := strings.LastIndex(r.URL.Path, ".")
@@ -116,7 +128,7 @@ func (n *Needle) ParsePath(fid string) {
 	length := len(fid)
 	if length <= 8 {
 		if length > 0 {
-			log.Println("Invalid fid", fid, "length", length)
+			glog.V(0).Infoln("Invalid fid", fid, "length", length)
 		}
 		return
 	}
@@ -138,7 +150,7 @@ func ParseKeyHash(key_hash_string string) (uint64, uint32) {
 	key_hash_bytes, khe := hex.DecodeString(key_hash_string)
 	key_hash_len := len(key_hash_bytes)
 	if khe != nil || key_hash_len <= 4 {
-		log.Println("Invalid key_hash", key_hash_string, "length:", key_hash_len, "error", khe)
+		glog.V(0).Infoln("Invalid key_hash", key_hash_string, "length:", key_hash_len, "error", khe)
 		return 0, 0
 	}
 	key := util.BytesToUint64(key_hash_bytes[0 : key_hash_len-4])

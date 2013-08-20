@@ -2,13 +2,14 @@ package storage
 
 import (
 	"bytes"
+	"code.google.com/p/weed-fs/go/glog"
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path"
 	"sync"
+	"time"
 )
 
 const (
@@ -45,7 +46,7 @@ func NewVolume(dirname string, id VolumeId, replicationType ReplicationType) (v 
 	e = v.load(true)
 	return
 }
-func LoadVolumeOnly(dirname string, id VolumeId) (v *Volume, e error) {
+func loadVolumeWithoutIndex(dirname string, id VolumeId) (v *Volume, e error) {
 	v = &Volume{dir: dirname, Id: id}
 	v.SuperBlock = SuperBlock{ReplicaType: CopyNil}
 	e = v.load(false)
@@ -54,17 +55,23 @@ func LoadVolumeOnly(dirname string, id VolumeId) (v *Volume, e error) {
 func (v *Volume) load(alsoLoadIndex bool) error {
 	var e error
 	fileName := path.Join(v.dir, v.Id.String())
-	v.dataFile, e = os.OpenFile(fileName+".dat", os.O_RDWR|os.O_CREATE, 0644)
+	if exists, canRead, canWrite, _ := checkFile(fileName + ".dat"); exists && !canRead {
+		return fmt.Errorf("cannot read Volume Data file %s.dat", fileName)
+	} else if !exists || canWrite {
+		v.dataFile, e = os.OpenFile(fileName+".dat", os.O_RDWR|os.O_CREATE, 0644)
+	} else if exists && canRead {
+		glog.V(0).Infoln("opening " + fileName + ".dat in READONLY mode")
+		v.dataFile, e = os.Open(fileName + ".dat")
+		v.readOnly = true
+	} else {
+		return fmt.Errorf("Unknown state about Volume Data file %s.dat", fileName)
+	}
 	if e != nil {
 		if !os.IsPermission(e) {
-			return fmt.Errorf("cannot create Volume Data %s.dat: %s", fileName, e)
+			return fmt.Errorf("cannot load Volume Data %s.dat: %s", fileName, e.Error())
 		}
-		if v.dataFile, e = os.Open(fileName + ".dat"); e != nil {
-			return fmt.Errorf("cannot open Volume Data %s.dat: %s", fileName, e)
-		}
-		log.Printf("opening " + fileName + ".dat in READONLY mode")
-		v.readOnly = true
 	}
+
 	if v.ReplicaType == CopyNil {
 		e = v.readSuperBlock()
 	} else {
@@ -73,28 +80,35 @@ func (v *Volume) load(alsoLoadIndex bool) error {
 	if e == nil && alsoLoadIndex {
 		var indexFile *os.File
 		if v.readOnly {
-			if indexFile, e = os.Open(fileName + ".idx"); e != nil && !os.IsNotExist(e) {
-				return fmt.Errorf("cannot open index file %s.idx: %s", fileName, e)
+			glog.V(1).Infoln("open to read file", fileName+".idx")
+			if indexFile, e = os.OpenFile(fileName+".idx", os.O_RDONLY, 0644); e != nil {
+				return fmt.Errorf("cannot read Volume Data %s.dat: %s", fileName, e.Error())
+			}
+
+			if v.ensureConvertIdxToCdb(fileName) {
+				v.nm, e = OpenCdbMap(fileName + ".cdb")
+				return e
 			}
 			if indexFile != nil {
-				log.Printf("converting %s.idx to %s.cdb", fileName, fileName)
+				glog.V(0).Infoln("converting %s.idx to %s.cdb", fileName, fileName)
 				if e = ConvertIndexToCdb(fileName+".cdb", indexFile); e != nil {
-					log.Printf("error converting %s.idx to %s.cdb: %s", fileName, fileName, e)
+					glog.Errorln("error converting %s.idx to %s.cdb: %s", fileName, fileName, e)
 				} else {
 					indexFile.Close()
 					os.Remove(indexFile.Name())
 					indexFile = nil
 				}
 			}
-			v.nm, e = OpenCdbMap(fileName + ".cdb")
-			return e
 		} else {
-			indexFile, e = os.OpenFile(fileName+".idx", os.O_RDWR|os.O_CREATE, 0644)
-			if e != nil {
-				return fmt.Errorf("cannot create Volume Data %s.dat: %s", fileName, e)
+			glog.V(1).Infoln("open to write file", fileName+".idx")
+			if indexFile, e = os.OpenFile(fileName+".idx", os.O_RDWR|os.O_CREATE, 0644); e != nil {
+				return fmt.Errorf("cannot write Volume Data %s.dat: %s", fileName, e.Error())
 			}
 		}
-		v.nm, e = LoadNeedleMap(indexFile)
+		glog.V(0).Infoln("loading file", fileName+".idx", "readonly", v.readOnly)
+		if v.nm, e = LoadNeedleMap(indexFile); e != nil {
+			glog.V(0).Infoln("loading error:", e)
+		}
 	}
 	return e
 }
@@ -108,7 +122,7 @@ func (v *Volume) Size() int64 {
 	if e == nil {
 		return stat.Size()
 	}
-	log.Printf("Failed to read file size %s %s\n", v.dataFile.Name(), e.Error())
+	glog.V(0).Infof("Failed to read file size %s %s", v.dataFile.Name(), e.Error())
 	return -1
 }
 func (v *Volume) Close() {
@@ -120,7 +134,7 @@ func (v *Volume) Close() {
 func (v *Volume) maybeWriteSuperBlock() error {
 	stat, e := v.dataFile.Stat()
 	if e != nil {
-		log.Printf("failed to stat datafile %s: %s", v.dataFile, e)
+		glog.V(0).Infof("failed to stat datafile %s: %s", v.dataFile, e.Error())
 		return e
 	}
 	if stat.Size() == 0 {
@@ -139,11 +153,11 @@ func (v *Volume) maybeWriteSuperBlock() error {
 }
 func (v *Volume) readSuperBlock() (err error) {
 	if _, err = v.dataFile.Seek(0, 0); err != nil {
-		return fmt.Errorf("cannot seek to the beginning of %s: %s", v.dataFile, err)
+		return fmt.Errorf("cannot seek to the beginning of %s: %s", v.dataFile, err.Error())
 	}
 	header := make([]byte, SuperBlockSize)
 	if _, e := v.dataFile.Read(header); e != nil {
-		return fmt.Errorf("cannot read superblock: %s", e)
+		return fmt.Errorf("cannot read superblock: %s", e.Error())
 	}
 	v.SuperBlock, err = ParseSuperBlock(header)
 	return err
@@ -151,7 +165,7 @@ func (v *Volume) readSuperBlock() (err error) {
 func ParseSuperBlock(header []byte) (superBlock SuperBlock, err error) {
 	superBlock.Version = Version(header[0])
 	if superBlock.ReplicaType, err = NewReplicationTypeFromByte(header[1]); err != nil {
-		err = fmt.Errorf("cannot read replica type: %s", err)
+		err = fmt.Errorf("cannot read replica type: %s", err.Error())
 	}
 	return
 }
@@ -202,7 +216,7 @@ func (v *Volume) write(n *Needle) (size uint32, err error) {
 
 	if size, err = n.Append(v.dataFile, v.Version()); err != nil {
 		if e := v.dataFile.Truncate(offset); e != nil {
-			err = fmt.Errorf("%s\ncannot truncate %s: %s", err, v.dataFile, e)
+			err = fmt.Errorf("%s\ncannot truncate %s: %s", err, v.dataFile, e.Error())
 		}
 		return
 	}
@@ -223,10 +237,10 @@ func (v *Volume) delete(n *Needle) (uint32, error) {
 	//fmt.Println("key", n.Id, "volume offset", nv.Offset, "data_size", n.Size, "cached size", nv.Size)
 	if ok {
 		size := nv.Size
-		if err:= v.nm.Delete(n.Id); err != nil {
+		if err := v.nm.Delete(n.Id); err != nil {
 			return size, err
 		}
-		if _, err:= v.dataFile.Seek(0, 2); err != nil {
+		if _, err := v.dataFile.Seek(0, 2); err != nil {
 			return size, err
 		}
 		n.Data = make([]byte, 0)
@@ -288,7 +302,7 @@ func (v *Volume) freeze() error {
 	defer v.accessLock.Unlock()
 	bn, _ := nakeFilename(v.dataFile.Name())
 	cdbFn := bn + ".cdb"
-	log.Printf("converting %s to %s", nm.indexFile.Name(), cdbFn)
+	glog.V(0).Infof("converting %s to %s", nm.indexFile.Name(), cdbFn)
 	err := DumpNeedleMapToCdb(cdbFn, nm)
 	if err != nil {
 		return err
@@ -306,7 +320,7 @@ func ScanVolumeFile(dirname string, id VolumeId,
 	visitSuperBlock func(SuperBlock) error,
 	visitNeedle func(n *Needle, offset uint32) error) (err error) {
 	var v *Volume
-	if v, err = LoadVolumeOnly(dirname, id); err != nil {
+	if v, err = loadVolumeWithoutIndex(dirname, id); err != nil {
 		return
 	}
 	if err = visitSuperBlock(v.SuperBlock); err != nil {
@@ -363,7 +377,7 @@ func (v *Volume) copyDataAndGenerateIndexFile(dstName, idxName string) (err erro
 		return err
 	}, func(n *Needle, offset uint32) error {
 		nv, ok := v.nm.Get(n.Id)
-		//log.Println("file size is", n.Size, "rest", rest)
+		//glog.V(0).Infoln("file size is", n.Size, "rest", rest)
 		if ok && nv.Offset*NeedlePaddingSize == offset {
 			if nv.Size > 0 {
 				if _, err = nm.Put(n.Id, new_offset/NeedlePaddingSize, n.Size); err != nil {
@@ -373,7 +387,7 @@ func (v *Volume) copyDataAndGenerateIndexFile(dstName, idxName string) (err erro
 					return fmt.Errorf("cannot append needle: %s", err)
 				}
 				new_offset += n.DiskSize()
-				//log.Println("saving key", n.Id, "volume offset", old_offset, "=>", new_offset, "data_size", n.Size, "rest", rest)
+				//glog.V(0).Infoln("saving key", n.Id, "volume offset", old_offset, "=>", new_offset, "data_size", n.Size, "rest", rest)
 			}
 		}
 		return nil
@@ -383,4 +397,49 @@ func (v *Volume) copyDataAndGenerateIndexFile(dstName, idxName string) (err erro
 }
 func (v *Volume) ContentSize() uint64 {
 	return v.nm.ContentSize()
+}
+
+func checkFile(filename string) (exists, canRead, canWrite bool, modTime time.Time) {
+	exists = true
+	fi, err := os.Stat(filename)
+	if os.IsNotExist(err) {
+		exists = false
+		return
+	}
+	if fi.Mode()&0400 != 0 {
+		canRead = true
+	}
+	if fi.Mode()&0200 != 0 {
+		canWrite = true
+	}
+	modTime = fi.ModTime()
+	return
+}
+func (v *Volume) ensureConvertIdxToCdb(fileName string) (cdbCanRead bool) {
+	var indexFile *os.File
+	var e error
+	_, cdbCanRead, cdbCanWrite, cdbModTime := checkFile(fileName + ".cdb")
+	_, idxCanRead, _, idxModeTime := checkFile(fileName + ".idx")
+	if cdbCanRead && cdbModTime.After(idxModeTime) {
+		return true
+	}
+	if !cdbCanWrite {
+		return false
+	}
+	if !idxCanRead {
+		glog.V(0).Infoln("Can not read file", fileName+".idx!")
+		return false
+	}
+	glog.V(2).Infoln("opening file", fileName+".idx")
+	if indexFile, e = os.Open(fileName + ".idx"); e != nil {
+		glog.V(0).Infoln("Failed to read file", fileName+".idx !")
+		return false
+	}
+	defer indexFile.Close()
+	glog.V(0).Infof("converting %s.idx to %s.cdb", fileName, fileName)
+	if e = ConvertIndexToCdb(fileName+".cdb", indexFile); e != nil {
+		glog.V(0).Infof("error converting %s.idx to %s.cdb: %s", fileName, fileName, e.Error())
+		return false
+	}
+	return true
 }

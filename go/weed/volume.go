@@ -1,10 +1,10 @@
 package main
 
 import (
+	"code.google.com/p/weed-fs/go/glog"
 	"code.google.com/p/weed-fs/go/operation"
 	"code.google.com/p/weed-fs/go/replication"
 	"code.google.com/p/weed-fs/go/storage"
-	"log"
 	"math/rand"
 	"mime"
 	"net/http"
@@ -37,12 +37,14 @@ var (
 	publicUrl       = cmdVolume.Flag.String("publicUrl", "", "Publicly accessible <ip|server_name>:<port>")
 	masterNode      = cmdVolume.Flag.String("mserver", "localhost:9333", "master server location")
 	vpulse          = cmdVolume.Flag.Int("pulseSeconds", 5, "number of seconds between heartbeats, must be smaller than the master's setting")
-	vReadTimeout    = cmdVolume.Flag.Int("readTimeout", 3, "connection read timeout in seconds")
+	vReadTimeout          = cmdVolume.Flag.Int("readTimeout", 3, "connection read timeout in seconds. Increase this if uploading large files.")
 	vMaxCpu         = cmdVolume.Flag.Int("maxCpu", 0, "maximum number of CPUs. 0 means all available CPUs")
 	dataCenter      = cmdVolume.Flag.String("dataCenter", "", "current volume server's data center name")
 	rack            = cmdVolume.Flag.String("rack", "", "current volume server's rack name")
+	volumeWhiteListOption = cmdVolume.Flag.String("whiteList", "", "comma separated Ip addresses having write permission. No limit if empty.")
 
 	store *storage.Store
+	volumeWhiteList []string
 )
 
 var fileNameEscaper = strings.NewReplacer("\\", "\\\\", "\"", "\\\"")
@@ -99,6 +101,9 @@ func freezeVolumeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	debug("freeze volume =", r.FormValue("volume"), ", error =", err)
 }
+func submitFromVolumeServerHandler(w http.ResponseWriter, r *http.Request) {
+	submitForClientHandler(w, r, *masterNode)
+}
 func storeHandler(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "GET":
@@ -106,9 +111,9 @@ func storeHandler(w http.ResponseWriter, r *http.Request) {
 	case "HEAD":
 		GetOrHeadHandler(w, r, false)
 	case "DELETE":
-		DeleteHandler(w, r)
+		secure(volumeWhiteList, DeleteHandler)(w, r)
 	case "POST":
-		PostHandler(w, r)
+		secure(volumeWhiteList, PostHandler)(w, r)
 	}
 }
 func GetOrHeadHandler(w http.ResponseWriter, r *http.Request, isGetMethod bool) {
@@ -142,7 +147,7 @@ func GetOrHeadHandler(w http.ResponseWriter, r *http.Request, isGetMethod bool) 
 		return
 	}
 	if n.Cookie != cookie {
-		log.Println("request with unmaching cookie from ", r.RemoteAddr, "agent", r.UserAgent())
+		glog.V(0).Infoln("request with unmaching cookie from ", r.RemoteAddr, "agent", r.UserAgent())
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
@@ -196,27 +201,25 @@ func GetOrHeadHandler(w http.ResponseWriter, r *http.Request, isGetMethod bool) 
 	}
 }
 func PostHandler(w http.ResponseWriter, r *http.Request) {
+	m := make(map[string]interface{})
 	if e := r.ParseForm(); e != nil {
 		debug("form parse error:", e)
-		writeJsonQuiet(w, r, e)
+		writeJsonError(w, r, e)
 		return
 	}
 	vid, _, _, _ := parseURLPath(r.URL.Path)
-	volumeId, e := storage.NewVolumeId(vid)
-	if e != nil {
-		debug("NewVolumeId error:", e)
-		writeJsonQuiet(w, r, e)
+	volumeId, ve := storage.NewVolumeId(vid)
+	if ve != nil {
+		debug("NewVolumeId error:", ve)
+		writeJsonError(w, r, ve)
 		return
 	}
-	if e != nil {
-		writeJsonQuiet(w, r, e)
-	} else {
 		needle, ne := storage.NewNeedle(r)
 		if ne != nil {
-			writeJsonQuiet(w, r, ne)
-		} else {
+		writeJsonError(w, r, ne)
+		return
+	}
 			ret, errorStatus := replication.ReplicatedWrite(*masterNode, store, volumeId, needle, r)
-			m := make(map[string]interface{})
 			if errorStatus == "" {
 				w.WriteHeader(http.StatusCreated)
 			} else {
@@ -225,8 +228,6 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			m["size"] = ret
 			writeJsonQuiet(w, r, m)
-		}
-	}
 }
 func DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	n := new(storage.Needle)
@@ -247,7 +248,7 @@ func DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if n.Cookie != cookie {
-		log.Println("delete with unmaching cookie from ", r.RemoteAddr, "agent", r.UserAgent())
+		glog.V(0).Infoln("delete with unmaching cookie from ", r.RemoteAddr, "agent", r.UserAgent())
 		return
 	}
 
@@ -284,7 +285,7 @@ func parseURLPath(path string) (vid, fid, filename, ext string) {
 		commaIndex := strings.LastIndex(path[sepIndex:], ",")
 		if commaIndex <= 0 {
 			if "favicon.ico" != path[sepIndex+1:] {
-				log.Println("unknown file id", path[sepIndex+1:])
+				glog.V(0).Infoln("unknown file id", path[sepIndex+1:])
 			}
 			return
 		}
@@ -312,38 +313,42 @@ func runVolume(cmd *Command, args []string) bool {
 		if max, e := strconv.Atoi(maxString); e == nil {
 			maxCounts = append(maxCounts, max)
 		} else {
-			log.Fatalf("The max specified in -max not a valid number %d", max)
+			glog.Fatalf("The max specified in -max not a valid number %s", max)
 		}
 	}
 	if len(folders) != len(maxCounts) {
-		log.Fatalf("%d directories by -dir, but only %d max is set by -max", len(folders), len(maxCounts))
+		glog.Fatalf("%d directories by -dir, but only %d max is set by -max", len(folders), len(maxCounts))
 	}
 	for _, folder := range folders {
 		fileInfo, err := os.Stat(folder)
 		if err != nil {
-			log.Fatalf("No Existing Folder:%s", folder)
+			glog.Fatalf("No Existing Folder:%s", folder)
 		}
 		if !fileInfo.IsDir() {
-			log.Fatalf("Volume Folder should not be a file:%s", folder)
+			glog.Fatalf("Volume Folder should not be a file:%s", folder)
 		}
 		perm := fileInfo.Mode().Perm()
-		log.Println("Volume Folder", folder)
-		log.Println("Permission:", perm)
+		glog.V(0).Infoln("Volume Folder", folder)
+		glog.V(0).Infoln("Permission:", perm)
 	}
 
 	if *publicUrl == "" {
 		*publicUrl = *ip + ":" + strconv.Itoa(*vport)
 	}
+	if *volumeWhiteListOption != "" {
+		volumeWhiteList = strings.Split(*volumeWhiteListOption, ",")
+	}
 
 	store = storage.NewStore(*vport, *ip, *publicUrl, folders, maxCounts)
 	defer store.Close()
 	http.HandleFunc("/", storeHandler)
-	http.HandleFunc("/status", statusHandler)
-	http.HandleFunc("/admin/assign_volume", assignVolumeHandler)
-	http.HandleFunc("/admin/vacuum_volume_check", vacuumVolumeCheckHandler)
-	http.HandleFunc("/admin/vacuum_volume_compact", vacuumVolumeCompactHandler)
-	http.HandleFunc("/admin/vacuum_volume_commit", vacuumVolumeCommitHandler)
-	http.HandleFunc("/admin/freeze_volume", freezeVolumeHandler)
+	http.HandleFunc("/submit", secure(volumeWhiteList, submitFromVolumeServerHandler))
+	http.HandleFunc("/status", secure(volumeWhiteList, statusHandler))
+	http.HandleFunc("/admin/assign_volume", secure(volumeWhiteList, assignVolumeHandler))
+	http.HandleFunc("/admin/vacuum_volume_check", secure(volumeWhiteList, vacuumVolumeCheckHandler))
+	http.HandleFunc("/admin/vacuum_volume_compact", secure(volumeWhiteList, vacuumVolumeCompactHandler))
+	http.HandleFunc("/admin/vacuum_volume_commit", secure(volumeWhiteList, vacuumVolumeCommitHandler))
+	http.HandleFunc("/admin/freeze_volume", secure(volumeWhiteList, freezeVolumeHandler))
 
 	go func() {
 		connected := true
@@ -355,7 +360,7 @@ func runVolume(cmd *Command, args []string) bool {
 			if err == nil {
 				if !connected {
 					connected = true
-					log.Println("Reconnected with master")
+					glog.V(0).Infoln("Reconnected with master")
 				}
 			} else {
 				if connected {
@@ -365,9 +370,9 @@ func runVolume(cmd *Command, args []string) bool {
 			time.Sleep(time.Duration(float32(*vpulse*1e3)*(1+rand.Float32())) * time.Millisecond)
 		}
 	}()
-	log.Println("store joined at", *masterNode)
+	glog.V(0).Infoln("store joined at", *masterNode)
 
-	log.Println("Start Weed volume server", VERSION, "at http://"+*ip+":"+strconv.Itoa(*vport))
+	glog.V(0).Infoln("Start Weed volume server", VERSION, "at http://"+*ip+":"+strconv.Itoa(*vport))
 	srv := &http.Server{
 		Addr:        ":" + strconv.Itoa(*vport),
 		Handler:     http.DefaultServeMux,
@@ -375,7 +380,7 @@ func runVolume(cmd *Command, args []string) bool {
 	}
 	e := srv.ListenAndServe()
 	if e != nil {
-		log.Fatalf("Fail to start:%s", e.Error())
+		glog.Fatalf("Fail to start:%s", e.Error())
 	}
 	return true
 }
