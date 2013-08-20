@@ -1,10 +1,10 @@
 package storage
 
 import (
+	"code.google.com/p/weed-fs/go/glog"
 	"code.google.com/p/weed-fs/go/util"
 	"encoding/hex"
 	"io/ioutil"
-	"code.google.com/p/weed-fs/go/glog"
 	"mime"
 	"net/http"
 	"path"
@@ -86,19 +86,19 @@ func ParseUpload(r *http.Request) (fileName string, data []byte, mimeType string
 		fileName = fileName[:len(fileName)-3]
 	}
 	modifiedTime, _ = strconv.ParseUint(r.FormValue("ts"), 10, 64)
-  return
+	return
 }
 func NewNeedle(r *http.Request) (n *Needle, e error) {
-  fname, mimeType, isGzipped := "", "", false
+	fname, mimeType, isGzipped := "", "", false
 	n = new(Needle)
 	fname, n.Data, mimeType, isGzipped, n.LastModified, e = ParseUpload(r)
 	if e != nil {
-	  return
+		return
 	}
-  if len(fname) < 256 {
-    n.Name = []byte(fname)
-    n.SetHasName()
-  }
+	if len(fname) < 256 {
+		n.Name = []byte(fname)
+		n.SetHasName()
+	}
 	if len(mimeType) < 256 {
 		n.Mime = []byte(mimeType)
 		n.SetHasMime()
@@ -108,7 +108,7 @@ func NewNeedle(r *http.Request) (n *Needle, e error) {
 	}
 	if n.LastModified == 0 {
 		n.LastModified = uint64(time.Now().Unix())
-    n.SetHasLastModifiedDate()
+		n.SetHasLastModifiedDate()
 	}
 
 	n.Checksum = NewCRC(n.Data)

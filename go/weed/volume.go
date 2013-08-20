@@ -30,20 +30,20 @@ var cmdVolume = &Command{
 }
 
 var (
-	vport           = cmdVolume.Flag.Int("port", 8080, "http listen port")
-	volumeFolders   = cmdVolume.Flag.String("dir", "/tmp", "directories to store data files. dir[,dir]...")
-	maxVolumeCounts = cmdVolume.Flag.String("max", "7", "maximum numbers of volumes, count[,count]...")
-	ip              = cmdVolume.Flag.String("ip", "localhost", "ip or server name")
-	publicUrl       = cmdVolume.Flag.String("publicUrl", "", "Publicly accessible <ip|server_name>:<port>")
-	masterNode      = cmdVolume.Flag.String("mserver", "localhost:9333", "master server location")
-	vpulse          = cmdVolume.Flag.Int("pulseSeconds", 5, "number of seconds between heartbeats, must be smaller than the master's setting")
+	vport                 = cmdVolume.Flag.Int("port", 8080, "http listen port")
+	volumeFolders         = cmdVolume.Flag.String("dir", "/tmp", "directories to store data files. dir[,dir]...")
+	maxVolumeCounts       = cmdVolume.Flag.String("max", "7", "maximum numbers of volumes, count[,count]...")
+	ip                    = cmdVolume.Flag.String("ip", "localhost", "ip or server name")
+	publicUrl             = cmdVolume.Flag.String("publicUrl", "", "Publicly accessible <ip|server_name>:<port>")
+	masterNode            = cmdVolume.Flag.String("mserver", "localhost:9333", "master server location")
+	vpulse                = cmdVolume.Flag.Int("pulseSeconds", 5, "number of seconds between heartbeats, must be smaller than the master's setting")
 	vReadTimeout          = cmdVolume.Flag.Int("readTimeout", 3, "connection read timeout in seconds. Increase this if uploading large files.")
-	vMaxCpu         = cmdVolume.Flag.Int("maxCpu", 0, "maximum number of CPUs. 0 means all available CPUs")
-	dataCenter      = cmdVolume.Flag.String("dataCenter", "", "current volume server's data center name")
-	rack            = cmdVolume.Flag.String("rack", "", "current volume server's rack name")
+	vMaxCpu               = cmdVolume.Flag.Int("maxCpu", 0, "maximum number of CPUs. 0 means all available CPUs")
+	dataCenter            = cmdVolume.Flag.String("dataCenter", "", "current volume server's data center name")
+	rack                  = cmdVolume.Flag.String("rack", "", "current volume server's rack name")
 	volumeWhiteListOption = cmdVolume.Flag.String("whiteList", "", "comma separated Ip addresses having write permission. No limit if empty.")
 
-	store *storage.Store
+	store           *storage.Store
 	volumeWhiteList []string
 )
 
@@ -214,20 +214,20 @@ func PostHandler(w http.ResponseWriter, r *http.Request) {
 		writeJsonError(w, r, ve)
 		return
 	}
-		needle, ne := storage.NewNeedle(r)
-		if ne != nil {
+	needle, ne := storage.NewNeedle(r)
+	if ne != nil {
 		writeJsonError(w, r, ne)
 		return
 	}
-			ret, errorStatus := replication.ReplicatedWrite(*masterNode, store, volumeId, needle, r)
-			if errorStatus == "" {
-				w.WriteHeader(http.StatusCreated)
-			} else {
-				w.WriteHeader(http.StatusInternalServerError)
-				m["error"] = errorStatus
-			}
-			m["size"] = ret
-			writeJsonQuiet(w, r, m)
+	ret, errorStatus := replication.ReplicatedWrite(*masterNode, store, volumeId, needle, r)
+	if errorStatus == "" {
+		w.WriteHeader(http.StatusCreated)
+	} else {
+		w.WriteHeader(http.StatusInternalServerError)
+		m["error"] = errorStatus
+	}
+	m["size"] = ret
+	writeJsonQuiet(w, r, m)
 }
 func DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	n := new(storage.Needle)
